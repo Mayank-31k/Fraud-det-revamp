@@ -24,7 +24,11 @@ st.set_page_config(
 )
 
 # API configuration
-API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8001/api")
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8001")
+# Ensure API_BASE_URL has /api suffix
+if not API_BASE_URL.endswith('/api'):
+    API_BASE_URL = f"{API_BASE_URL.rstrip('/')}/api"
+    
 TRANSACTIONS_URL = f"{API_BASE_URL}/transactions"
 TRANSACTIONS_COUNT_URL = f"{API_BASE_URL}/transactions/count"
 METRICS_URL = f"{API_BASE_URL}/metrics"
