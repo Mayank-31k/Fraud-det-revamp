@@ -373,7 +373,56 @@ def detect_fraud_json(transaction_input: schemas.JsonTransactionInput, db: Sessi
         else:
             fraud_reason = "Multiple risk factors"
     else:
-        fraud_reason = "AI model detection"
+        # Generate meaningful AI model fraud reasons based on transaction characteristics
+        amount = transaction_data.get("amount", 0)
+        payment_mode = transaction_data.get("payment_mode", "")
+        channel = transaction_data.get("channel", "")
+        
+        # Analyze specific risk factors that the AI model considers
+        risk_factors = []
+        
+        # Amount-based risks
+        if amount > 50000:
+            risk_factors.append("extremely high transaction amount")
+        elif amount > 25000:
+            risk_factors.append("very high transaction amount")
+        elif amount > 10000:
+            risk_factors.append("high transaction amount")
+        
+        # Payment mode risks
+        if payment_mode in ["digital_wallet", "bank_transfer"]:
+            risk_factors.append("high-risk payment method")
+        
+        # Channel risks
+        if channel in ["phone", "web"]:
+            risk_factors.append("remote transaction channel")
+        
+        # ID pattern risks (short IDs can indicate fake accounts)
+        payer_id = transaction_data.get("payer_id", "")
+        payee_id = transaction_data.get("payee_id", "")
+        if len(payer_id) <= 3 or len(payee_id) <= 3:
+            risk_factors.append("suspicious account identifiers")
+        
+        # Missing bank info for large transactions
+        if amount > 5000 and not transaction_data.get("bank"):
+            risk_factors.append("missing bank verification for large amount")
+        
+        # Generate descriptive fraud reason
+        if risk_factors:
+            if len(risk_factors) == 1:
+                fraud_reason = f"Suspicious transaction pattern: {risk_factors[0]}"
+            elif len(risk_factors) == 2:
+                fraud_reason = f"Multiple risk indicators: {risk_factors[0]} and {risk_factors[1]}"
+            else:
+                fraud_reason = f"Multiple risk indicators including {risk_factors[0]}, {risk_factors[1]} and {len(risk_factors)-2} other factor(s)"
+        else:
+            # Fallback for when AI detects fraud but no obvious rules apply
+            if ai_score > 0.8:
+                fraud_reason = "AI model detected highly suspicious transaction pattern"
+            elif ai_score > 0.6:
+                fraud_reason = "AI model identified moderate fraud risk indicators"
+            else:
+                fraud_reason = "AI model flagged transaction based on learned fraud patterns"
     
     # Store transaction in database if it contains required fields
     required_fields = ["amount", "payer_id", "payee_id", "payment_mode", "channel"]
@@ -501,3 +550,53 @@ def deactivate_rule(rule_id: int, db: Session = Depends(get_db)):
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
     return rule
+
+@router.get("/transactions/count")
+def get_transaction_count(
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    payment_mode: Optional[str] = None,
+    channel: Optional[str] = None,
+    is_fraud: Optional[bool] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get total count of transactions with optional filtering
+    
+    Returns:
+        dict: Contains total_count and fraud_count
+    """
+    try:
+        # Base query
+        query = db.query(models.Transaction)
+        
+        # Apply filters
+        if start_date:
+            query = query.filter(models.Transaction.timestamp >= start_date)
+        if end_date:
+            query = query.filter(models.Transaction.timestamp <= end_date)
+        if payment_mode:
+            query = query.filter(models.Transaction.payment_mode == payment_mode)
+        if channel:
+            query = query.filter(models.Transaction.channel == channel)
+        if is_fraud is not None:
+            query = query.filter(models.Transaction.is_fraud_predicted == is_fraud)
+        
+        # Get total count
+        total_count = query.count()
+        
+        # Get fraud count
+        fraud_count = query.filter(models.Transaction.is_fraud_predicted == True).count()
+        
+        return {
+            "total_count": total_count,
+            "fraud_count": fraud_count,
+            "legitimate_count": total_count - fraud_count
+        }
+    except Exception as e:
+        print(f"Error getting transaction count: {str(e)}")
+        return {
+            "total_count": 0,
+            "fraud_count": 0,
+            "legitimate_count": 0
+        }

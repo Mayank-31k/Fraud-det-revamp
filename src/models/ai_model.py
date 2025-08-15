@@ -1,8 +1,12 @@
 import joblib
 import os
 import numpy as np
+import warnings
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
+
+# Suppress sklearn warnings about feature names
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 class AIFraudDetector:
     """
