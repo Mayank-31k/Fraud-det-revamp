@@ -16,7 +16,12 @@ st.set_page_config(
 )
 
 # API configuration - Updated for deployment
-API_BASE_URL = st.secrets.get("API_BASE_URL", "http://localhost:8001/api")
+import os
+API_BASE_URL = os.environ.get("API_BASE_URL") or st.secrets.get("API_BASE_URL", "http://localhost:8001")
+# Ensure API_BASE_URL has /api suffix
+if not API_BASE_URL.endswith('/api'):
+    API_BASE_URL = f"{API_BASE_URL.rstrip('/')}/api"
+
 TRANSACTIONS_URL = f"{API_BASE_URL}/transactions"
 TRANSACTIONS_COUNT_URL = f"{API_BASE_URL}/transactions/count"
 METRICS_URL = f"{API_BASE_URL}/metrics"
@@ -150,8 +155,81 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # Manual transaction submission form
+    st.subheader("➕ Add New Transaction")
+    
+    with st.form("new_transaction_form"):
+        amount = st.number_input("Amount ($)", min_value=0.01, value=100.0, step=0.01)
+        payer_id = st.text_input("Payer ID", placeholder="P12345")
+        payee_id = st.text_input("Payee ID", placeholder="M67890")
+        payment_mode_input = st.selectbox("Payment Mode", 
+                                        ["credit_card", "debit_card", "bank_transfer", "wallet", "upi"])
+        channel_input = st.selectbox("Channel", 
+                                   ["web", "mobile_app", "pos", "atm", "branch"])
+        bank = st.text_input("Bank (Optional)", placeholder="Chase")
+        
+        submitted = st.form_submit_button("Submit Transaction", type="primary")
+        
+        if submitted:
+            if amount and payer_id and payee_id:
+                # Create transaction data
+                transaction_data = {
+                    "transaction_id": str(uuid.uuid4()),
+                    "amount": float(amount),
+                    "payer_id": payer_id,
+                    "payee_id": payee_id,
+                    "payment_mode": payment_mode_input,
+                    "channel": channel_input,
+                    "bank": bank if bank else None,
+                    "additional_data": {
+                        "ip_address": "127.0.0.1",
+                        "user_agent": "Streamlit",
+                        "device_id": "STREAMLIT_DEVICE",
+                        "location": "Dashboard",
+                        "time_of_day": "day" if 6 <= datetime.now().hour < 18 else "night"
+                    }
+                }
+                
+                result, error = submit_transaction_to_api(transaction_data)
+                
+                if result:
+                    # Store the latest transaction for highlighting
+                    st.session_state.latest_transaction = result.get('transaction_id')
+                    
+                    # Display success message with fraud detection result
+                    is_fraud = result.get('is_fraud', result.get('is_fraud_predicted', False))
+                    fraud_status = "🚨 FRAUDULENT" if is_fraud else "✅ LEGITIMATE"
+                    fraud_score = result.get('fraud_score', 0)
+                    
+                    st.success(f"✅ Transaction submitted successfully!")
+                    
+                    # Create an expander for detailed results
+                    with st.expander("🔍 Fraud Detection Results", expanded=True):
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Status", fraud_status)
+                        with col2:
+                            st.metric("Fraud Score", f"{fraud_score:.3f}")
+                        with col3:
+                            processing_time = result.get('prediction_time_ms', 0)
+                            if processing_time == 0:
+                                st.metric("Source", result.get('fraud_source', 'N/A'))
+                            else:
+                                st.metric("Processing Time", f"{processing_time}ms")
+                        
+                        # Show detailed result
+                        st.json(result)
+                    
+                    st.rerun()
+                elif error:
+                    st.error(f"❌ {error}")
+            else:
+                st.error("Please fill all required fields")
+    
+    st.markdown("---")
+    
     # JSON transaction submission
-    st.subheader("📝 Submit Transaction")
+    st.subheader("📝 JSON Transaction")
     
     json_input = st.text_area("Transaction JSON", 
                              placeholder='''{
