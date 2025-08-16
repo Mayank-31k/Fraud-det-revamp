@@ -145,6 +145,7 @@ def submit_transaction_to_api(transaction_data):
 
 # Main app layout
 st.title("🛡️ Fraud Detection, Alert, and Monitoring System")
+st.info("🔗 **Backend API Access:** To connect with the backend API directly, visit https://fraud-detection-net.onrender.com")
 st.markdown("---")
 
 # Check API status
